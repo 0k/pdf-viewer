@@ -1,0 +1,42 @@
+{
+  "name": "@0k/pdf-viewer",
+  "version": "0.1.0",
+  "description": "Plain-DOM PDF page viewer over the shared PDF.js legacy runtime: paging, zoom, pinch/pan, error/retry and single-owner teardown, stated once for every frontend.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist",
+    "README.org",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"require('node:fs').copyFileSync('src/style.css','dist/style.css')\"",
+    "check:chrome91": "node scripts/check-chrome91.mjs",
+    "check": "npm run test && npm run typecheck && npm run build && npm run check:chrome91"
+  },
+  "peerDependencies": {
+    "@0k/pdfjs-legacy-runtime": "0.2.0"
+  },
+  "devDependencies": {
+    "@0k/pdfjs-legacy-runtime": "0.2.0",
+    "@types/node": "22.10.5",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.3",
+    "vite": "6.4.4",
+    "vitest": "5.0.3"
+  }
+}

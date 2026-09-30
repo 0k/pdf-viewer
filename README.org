@@ -1,0 +1,36 @@
+#+TITLE: @0k/pdf-viewer
+
+* Purpose
+
+=@0k/pdf-viewer= is a plain-TypeScript in-page PDF viewer. It owns the
+toolbar, the page canvas, paging, zoom, pinch and pan gestures, the fit
+policy, error and retry, accessible controls, scoped styles and single-owner
+teardown. Hosts own the PDF URL and its access policy, where the
+viewer mounts, the affordance around it, and translated labels.
+
+It renders on =@0k/pdfjs-legacy-runtime=, which owns the PDF.js
+compatibility policy (exact =pdfjs-dist= 3.11.174 pin, legacy build, worker
+wiring, single-owner teardown type). This package never imports =pdfjs-dist=.
+
+The private package is delivered as one committed local tarball to each
+consumer. It is not published and consumers do not depend on sibling
+checkouts.
+
+* Usage
+
+#+begin_src typescript
+import { mountPdfViewer } from '@0k/pdf-viewer';
+import '@0k/pdf-viewer/style.css';
+
+const owner = mountPdfViewer(host, {
+  url: 'https://example.com/manual.pdf', // PDF.js range-loads it
+  fit: 'width',                      // or 'page'
+  labels: { previous: 'Page précédente' },
+});
+owner.next();
+await owner.destroy();               // releases the worker; idempotent
+#+end_src
+
+The host decides when to mount (lazily, on an "open" click, so a collapsed
+widget costs nothing) and where; the viewer fills its host element and is
+in-flow. A host wanting a full-screen reader wraps it in its own overlay.
