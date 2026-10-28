@@ -1,0 +1,219 @@
+/*
+ * Every rule is scoped under `.pdf-viewer`; hosts theme through the
+ * viewer-prefixed custom properties declared on the root.
+ *
+ * The viewer is IN-FLOW: it fills its host's width and, unless the host
+ * constrains `--pdf-viewer-surface-max-height` or makes the root a flex
+ * child with a bounded height, the surface grows with the page. A
+ * full-screen reader is the host's overlay around this root.
+ */
+.pdf-viewer {
+  --pdf-viewer-surface: transparent;
+  --pdf-viewer-page-background: #fff;
+  --pdf-viewer-page-border: rgba(128, 128, 128, 0.2);
+  --pdf-viewer-page-radius: 4px;
+  --pdf-viewer-surface-max-height: none;
+  --pdf-viewer-button-size: 2.25rem;
+  --pdf-viewer-button-radius: 6px;
+  --pdf-viewer-button-background: rgba(128, 128, 128, 0.12);
+  --pdf-viewer-button-background-hover: rgba(128, 128, 128, 0.24);
+  --pdf-viewer-button-border: rgba(128, 128, 128, 0.25);
+  --pdf-viewer-button-color: inherit;
+  --pdf-viewer-focus: rgba(118, 227, 234, 0.6);
+  --pdf-viewer-info: inherit;
+  --pdf-viewer-error: rgb(220, 90, 90);
+  --pdf-viewer-error-background: rgba(239, 68, 68, 0.15);
+  --pdf-viewer-error-border: rgba(239, 68, 68, 0.35);
+  --pdf-viewer-reset-background: rgba(0, 0, 0, 0.55);
+  --pdf-viewer-reset-background-hover: rgba(0, 0, 0, 0.75);
+  --pdf-viewer-reset-color: #fff;
+  --pdf-viewer-gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pdf-viewer-gap);
+  width: 100%;
+  min-height: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pdf-viewer-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pdf-viewer-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* WCAG touch-target floors: keep the 44px minimum on the hit area. */
+.pdf-viewer-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max(44px, var(--pdf-viewer-button-size));
+  min-height: max(44px, var(--pdf-viewer-button-size));
+  padding: 2px 10px;
+  background: var(--pdf-viewer-button-background);
+  color: var(--pdf-viewer-button-color);
+  border: 1px solid var(--pdf-viewer-button-border);
+  border-radius: var(--pdf-viewer-button-radius);
+  font-size: 1em;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pdf-viewer-toolbar button:hover:not(:disabled) {
+  background: var(--pdf-viewer-button-background-hover);
+}
+
+.pdf-viewer-toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pdf-viewer-toolbar button:focus-visible,
+.pdf-viewer-retry:focus-visible,
+.pdf-viewer-reset:focus-visible {
+  outline: 2px solid var(--pdf-viewer-focus);
+  outline-offset: 1px;
+}
+
+.pdf-viewer-page,
+.pdf-viewer-zoom {
+  min-width: 3.2em;
+  color: var(--pdf-viewer-info);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  opacity: 0.8;
+}
+
+/*
+ * The surface: where the page lives and where gestures land.
+ *
+ * `touch-action: none` (gesture mode) is load-bearing: without it the
+ * browser claims the two-finger gesture for its own page zoom before the
+ * pointer handlers see it. Panning is a transform, not a scroll, so the
+ * surface hides overflow in gesture mode; without gestures it scrolls
+ * like an ordinary box so a mouse can reach a zoomed-in page.
+ */
+.pdf-viewer-surface {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  min-height: 0;
+  max-height: var(--pdf-viewer-surface-max-height);
+  overflow: auto;
+  background: var(--pdf-viewer-surface);
+}
+
+.pdf-viewer-surface--gestures {
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Scroll mode: the browser keeps one-finger panning (so a reader in a
+   scrolling page can always scroll past it); pinch is left to the viewer. */
+.pdf-viewer-surface--scroll {
+  touch-action: pan-x pan-y;
+}
+
+.pdf-viewer-surface--panning {
+  cursor: grabbing;
+}
+
+.pdf-viewer-canvas {
+  display: block;
+  flex-shrink: 0;
+  margin-inline: auto;
+  background: var(--pdf-viewer-page-background);
+  border: 1px solid var(--pdf-viewer-page-border);
+  border-radius: var(--pdf-viewer-page-radius);
+  /* The transform is the live gesture; the raster carries the rest. */
+  transform-origin: center top;
+  will-change: transform;
+}
+
+.pdf-viewer-canvas[hidden] {
+  display: none;
+}
+
+.pdf-viewer-reset {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: var(--pdf-viewer-reset-background);
+  color: var(--pdf-viewer-reset-color);
+  border: 1px solid var(--pdf-viewer-button-border);
+  border-radius: var(--pdf-viewer-button-radius);
+  cursor: pointer;
+}
+
+.pdf-viewer-reset[hidden] {
+  display: none;
+}
+
+.pdf-viewer-reset svg {
+  width: 16px;
+  height: 16px;
+}
+
+.pdf-viewer-reset:hover {
+  background: var(--pdf-viewer-reset-background-hover);
+}
+
+.pdf-viewer-status {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78em;
+  line-height: 1.4;
+  opacity: 0.8;
+}
+
+.pdf-viewer-status:empty {
+  display: none;
+}
+
+.pdf-viewer-status[data-state='error'] {
+  color: var(--pdf-viewer-error);
+  opacity: 1;
+}
+
+.pdf-viewer-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 2px 12px;
+  background: var(--pdf-viewer-error-background);
+  color: var(--pdf-viewer-error);
+  border: 1px solid var(--pdf-viewer-error-border);
+  border-radius: var(--pdf-viewer-button-radius);
+  font-size: 0.92em;
+  font-family: inherit;
+  cursor: pointer;
+}

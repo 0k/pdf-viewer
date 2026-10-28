@@ -25,6 +25,7 @@ import '@0k/pdf-viewer/style.css';
 const owner = mountPdfViewer(host, {
   url: 'https://example.com/manual.pdf', // PDF.js range-loads it
   fit: 'width',                      // or 'page'
+  interaction: 'scroll',            // in-flow; 'gestures' (default) for full screen
   labels: { previous: 'Page précédente' },
 });
 owner.next();
@@ -34,3 +35,143 @@ await owner.destroy();               // releases the worker; idempotent
 The host decides when to mount (lazily, on an "open" click, so a collapsed
 widget costs nothing) and where; the viewer fills its host element and is
 in-flow. A host wanting a full-screen reader wraps it in its own overlay.
+
+* Options
+
+~mountPdfViewer(host, options)~ mounts into an ~HTMLElement~ and starts
+loading. The required ~url~ is passed verbatim to PDF.js; hosts own access
+policy, including any cross-origin permissions. Optional fields:
+
+- ~fit~: ~"width"~ (default) fills the surface width; ~"page"~ fits the
+  whole page within the surface box using the smaller width/height ratio.
+  Both policies follow surface size changes automatically; resize bursts
+  are debounced before the page is re-rendered.
+- ~zoom~: an object with ~min~ (0.5), ~max~ (2), ~step~ (0.25) and
+  ~initial~ (1). Values are fractions of the fitted size; the initial
+  value and subsequent zoom changes are clamped to the bounds.
+- ~maxDpr~: backing-canvas device pixel ratio cap, default 2.
+- ~interaction~: ~"gestures"~ (default) owns drag-to-pan, pinch and any
+  wheel zoom, and supports double-click reset. ~"scroll"~ leaves
+  one-finger swipes and bare wheel scrolling to the browser while pinch
+  and Ctrl/⌘+wheel zoom. ~"none"~ leaves only the toolbar controls active.
+- ~labels~: partial overrides of the English defaults below.
+- ~onStateChange~: callback receiving a ~PdfViewerState~ snapshot when
+  loading starts, a raster commits, or an error occurs. The snapshot has
+  ~status~ (~"loading"~, ~"ready"~ or ~"error"~), ~page~, ~pageCount~,
+  ~zoom~ and ~error~ (a string or ~null~). A ready document can still be
+  awaiting its first raster; the canvas stays hidden until that commit.
+
+The zoom live region changes when a gesture settles (last pointer lifted
+or 250 ms of wheel quiet), not during movement. Toolbar zoom changes the
+readout immediately.
+
+** Labels
+
+~labels~ accepts any subset of ~PdfViewerLabels~:
+
+| Key | English default |
+|-----+-----------------|
+| ~controls~ | PDF controls |
+| ~previous~ | Previous page |
+| ~next~ | Next page |
+| ~zoomOut~ | Zoom out |
+| ~zoomIn~ | Zoom in |
+| ~zoomReset~ | Reset zoom |
+| ~reset~ | Reset zoom and pan |
+| ~retry~ | Retry |
+| ~loading~ | Loading… |
+| ~failed~ | Failed to load PDF: %{reason} |
+
+The ~%{reason}~ placeholder in ~failed~ is replaced by the literal error
+message. Labels are rendered as text, not HTML; dollar sequences in an
+error reason are preserved.
+
+** Owner handle
+
+~mountPdfViewer~ returns a ~PdfViewerOwner~ with a readonly ~host~ and:
+
+- ~state()~: return the current state snapshot, including live gesture zoom.
+- ~goTo(page)~: floor and clamp the page number to the document range.
+- ~next()~ and ~previous()~: move one page within that range.
+- ~setZoom(zoom)~: clamp zoom, update the readout and re-render.
+- ~resetView()~: restore zoom 1 (clamped to the bounds), not ~initial~,
+  and clear pan.
+- ~reload()~: return a promise for releasing the current document and
+  loading the same URL again. Superseded loads cannot overwrite a newer
+  load; startup waits for preceding task teardowns to settle.
+- ~destroy()~: remove the DOM and return a promise for worker teardown.
+  Idempotent, including before loading completes.
+
+Paging and zoom methods do nothing unless the document is ready.
+Mounting again on the same host replaces its viewer and waits for the
+previous owner's teardown before creating a new worker. An old owner
+cannot destroy the replacement.
+
+** Exported constants
+
+- ~PDF_VIEWER_CLASS~: ~"pdf-viewer"~, the viewer root class.
+- ~PDF_VIEWER_MIN_ZOOM~: 0.5.
+- ~PDF_VIEWER_MAX_ZOOM~: 2.
+- ~PDF_VIEWER_ZOOM_STEP~: 0.25.
+- ~PDF_VIEWER_DEFAULT_ZOOM~: 1.
+- ~PDF_VIEWER_MAX_DPR~: 2.
+- ~PDF_VIEWER_WHEEL_FACTOR~: 0.9 per 100 CSS pixels of wheel-down movement;
+  wheel-up reverses the factor. Line deltas use 16 CSS pixels per line,
+  and page deltas use the surface's client height.
+- ~PDF_VIEWER_WHEEL_SETTLE_MS~: 250.
+- ~DEFAULT_PDF_VIEWER_LABELS~: the English label object above.
+
+* Theming
+
+Import ~@0k/pdf-viewer/style.css~ separately; importing the JavaScript does
+not inject styles. Override these properties on the ~.pdf-viewer~ root
+with a selector loaded after the package stylesheet:
+
+| Property | Default |
+|----------+---------|
+| ~--pdf-viewer-surface~ | transparent |
+| ~--pdf-viewer-page-background~ | #fff |
+| ~--pdf-viewer-page-border~ | rgba(128, 128, 128, 0.2) |
+| ~--pdf-viewer-page-radius~ | 4px |
+| ~--pdf-viewer-surface-max-height~ | none |
+| ~--pdf-viewer-button-size~ | 2.25rem |
+| ~--pdf-viewer-button-radius~ | 6px |
+| ~--pdf-viewer-button-background~ | rgba(128, 128, 128, 0.12) |
+| ~--pdf-viewer-button-background-hover~ | rgba(128, 128, 128, 0.24) |
+| ~--pdf-viewer-button-border~ | rgba(128, 128, 128, 0.25) |
+| ~--pdf-viewer-button-color~ | inherit |
+| ~--pdf-viewer-focus~ | rgba(118, 227, 234, 0.6) |
+| ~--pdf-viewer-info~ | inherit |
+| ~--pdf-viewer-error~ | rgb(220, 90, 90) |
+| ~--pdf-viewer-error-background~ | rgba(239, 68, 68, 0.15) |
+| ~--pdf-viewer-error-border~ | rgba(239, 68, 68, 0.35) |
+| ~--pdf-viewer-reset-background~ | rgba(0, 0, 0, 0.55) |
+| ~--pdf-viewer-reset-background-hover~ | rgba(0, 0, 0, 0.75) |
+| ~--pdf-viewer-reset-color~ | #fff |
+| ~--pdf-viewer-gap~ | 6px |
+
+Toolbar button hit areas retain a 44px minimum regardless of button size.
+The viewer fills its host's width and grows with the page unless bounded.
+Set ~--pdf-viewer-surface-max-height~ (for example ~60vh~) to cap the
+surface, or make the root a flex child with a bounded height. The surface
+can shrink (~min-height: 0~); toolbar and status do not flex. Scroll and
+toolbar-only modes use native overflow scrolling; gesture mode hides
+overflow and pans with a transform. Fit-to-page uses the resulting surface
+box, so a full-screen host must provide its own height constraint.
+
+* Security
+
+The pinned =pdfjs-dist= 3.11.174 is affected by CVE-2024-4367: a crafted
+font can execute JavaScript when evaluation is enabled. The
+[[https://github.com/0k/pdfjs-legacy-runtime#security][runtime's security note]] explains its mitigation: every document is loaded
+with ~isEvalSupported: false~, applied after caller options so it cannot
+be re-enabled. A Content-Security-Policy without ~'unsafe-eval'~ provides
+a second layer. The version remains pinned for Chrome 91 compatibility;
+the mitigation does not remove the version-based ~npm audit~ advisory.
+
+PDF.js also has an optional ~canvas~ dependency for Node.js rendering.
+Its install tooling pulls in ~tar~ advisories; it does not enter the
+browser bundle. Browser-only hosts can skip optional dependencies with
+~npm install --omit=optional~, or use an npm ~overrides~ entry to select a
+patched transitive ~tar~ version compatible with their install tooling.
+The latter changes installation tooling, not the browser PDF runtime.
