@@ -72,6 +72,14 @@ describe("labels", () => {
 });
 
 describe("documentation", () => {
+  it("exposes a documented opt-in browser verification command", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    expect(pkg.scripts["test:browser"]).toBe("python3 test/browser.py");
+    expect(pkg.scripts.check).not.toContain("test:browser");
+    expect(readFileSync(join(root, "README.org"), "utf8")).toContain("~npm run test:browser~");
+  });
+
   it("documents the runtime security mitigation and optional Node renderer", () => {
     const readme = readFileSync(resolve(import.meta.dirname, "../README.org"), "utf8");
     expect(readme).toContain("* Security");
@@ -97,6 +105,7 @@ describe("documentation", () => {
       expect(readme).toContain(`~${match[1]}~`);
     }
     expect(readme).toContain("https://example.com/manual.pdf");
+    expect(readme).toContain("\nnpm install @0k/pdf-viewer\n");
   });
 });
 

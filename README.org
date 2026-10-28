@@ -12,9 +12,17 @@ It renders on =@0k/pdfjs-legacy-runtime=, which owns the PDF.js
 compatibility policy (exact =pdfjs-dist= 3.11.174 pin, legacy build, worker
 wiring, single-owner teardown type). This package never imports =pdfjs-dist=.
 
-The private package is delivered as one committed local tarball to each
-consumer. It is not published and consumers do not depend on sibling
-checkouts.
+MIT licensed.
+
+* Install
+
+#+begin_src sh
+npm install @0k/pdf-viewer
+#+end_src
+
+npm ≥7 installs the exact peer =@0k/pdfjs-legacy-runtime= automatically.
+The host's bundler sees one copy of the runtime and emits one PDF.js worker
+asset.
 
 * Usage
 
@@ -175,3 +183,18 @@ browser bundle. Browser-only hosts can skip optional dependencies with
 ~npm install --omit=optional~, or use an npm ~overrides~ entry to select a
 patched transitive ~tar~ version compatible with their install tooling.
 The latter changes installation tooling, not the browser PDF runtime.
+
+* Development
+
+#+begin_src sh
+npm install
+npm run check   # unit tests, strict typecheck, build, Chrome 91 audit
+#+end_src
+
+With Python Playwright and system Chrome available, ~npm run test:browser~
+bundles the built package in a temporary host and verifies real PDF.js
+worker loading, raster pixels, rapid zoom/reload/replacement, CSS,
+teardown, scroll reachability, fitted borders and gesture-settle positions.
+
+To try an unreleased change in a host, link the checkout there:
+~npm link <path-to-pdf-viewer>~.

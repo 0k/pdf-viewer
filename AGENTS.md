@@ -31,5 +31,12 @@ by `@0k/pdfjs-legacy-runtime`, consumed here as an exact peer dependency.
   `Promise.withResolvers`): `tsc` targets ES2020; emitted code is audited by
   `npm run check:chrome91`.
 - Strict `tsc` (`strict`, `noUncheckedIndexedAccess`) is the static check; do not add a separate TypeScript linter.
-- Write specification tests first and run `npm run check` before delivery.
-- Deliver every consumer with `npm run vendor`; never publish.
+- Write specification tests first and run `npm run check` before a release.
+
+## Delivery
+
+Published to npm as `@0k/pdf-viewer` with `pkg`, from a git tag; the version
+comes from the tag (`package.json` carries `%%version%%`).  Never bump the
+version to try a change: an unreleased change is tried in a host through an
+uncommitted local override (`npm link <path-to-checkout>` there), never
+committed into the host.
