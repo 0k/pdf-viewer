@@ -129,6 +129,23 @@ def assert_host_resize(page):
     print("PASS: fit follows host shrink and grow")
 
 
+def assert_cross_host_teardown(page):
+    starts = page.evaluate("window.workerStarts")
+    page.evaluate("window.maxLiveWorkers = window.liveWorkers")
+    for _ in range(4):
+        page.evaluate("""() => {
+            void owner.destroy();
+            const host = document.getElementById('host');
+            host.replaceWith(host.cloneNode(false));
+            window.remount();
+        }""")
+        page.wait_for_selector('.pdf-viewer[data-painted="1"]')
+    workers = page.evaluate("""() => ({starts:window.workerStarts,
+        live:window.liveWorkers, max:window.maxLiveWorkers})""")
+    assert workers == {"starts": starts + 4, "live": 1, "max": 1}, workers
+    print("PASS: four unawaited destroys and new-host mounts never overlap real workers")
+
+
 def assert_classic_scrollbar_fit(playwright, url):
     browser = playwright.chromium.launch(
         channel="chrome", headless=True, ignore_default_args=["--hide-scrollbars"]
@@ -191,6 +208,14 @@ def verify():
         (host / "main.js").write_text(
             f'import {{mountPdfViewer}} from {json.dumps(str(ROOT / "dist/index.js"))};\n'
             f'import {json.dumps(str(ROOT / "dist/style.css"))};\n'
+            'const NativeWorker = window.Worker;\n'
+            'window.workerStarts = 0; window.liveWorkers = 0; window.maxLiveWorkers = 0;\n'
+            'window.Worker = class extends NativeWorker {\n'
+            'constructor(...args) {super(...args); this.released = false; window.workerStarts++; '
+            'window.liveWorkers++; window.maxLiveWorkers = Math.max(window.maxLiveWorkers, window.liveWorkers);}\n'
+            'terminate() {if (!this.released) {this.released = true; window.liveWorkers--;} '
+            'return super.terminate();}\n'
+            '};\n'
             'const drawImage = CanvasRenderingContext2D.prototype.drawImage;\n'
             'CanvasRenderingContext2D.prototype.drawImage = function (...args) {'
             'if (this.canvas.classList.contains("pdf-viewer-canvas")) window.renderCount++;'
@@ -255,6 +280,7 @@ def verify():
                     assert_scroll_reachability(page)
                     assert_gesture_settle_position(page)
                     assert_scrollbar_band_stability(page)
+                    assert_cross_host_teardown(page)
                     page.evaluate("async () => {await owner.destroy();}")
                     assert page.locator(".pdf-viewer").count() == 0
                     assert not errors, errors

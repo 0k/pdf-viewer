@@ -111,9 +111,17 @@ error reason are preserved.
   Idempotent, including before loading completes.
 
 Paging and zoom methods do nothing unless the document is ready.
-Mounting again on the same host replaces its viewer and waits for the
-previous owner's teardown before creating a new worker. An old owner
-cannot destroy the replacement.
+Mounting again on the same host replaces its viewer. Across all hosts
+using this module, every worker startup waits for all pending loading-task
+teardowns to settle, whether resolved or rejected. A host can call an old
+owner's ~destroy()~ without awaiting it and mount on a new element: the new
+worker will not overlap that pending teardown. This also applies to
+~reload()~. Only pending teardowns are retained; settled ones are removed.
+A failed teardown is logged and does not block startup, but may leave its
+worker running. A slow teardown delays startup of every later viewer in
+the module (across all hosts); a teardown that never settles holds them
+back indefinitely.
+An old owner cannot destroy a replacement or a viewer on another host.
 
 ** Exported constants
 

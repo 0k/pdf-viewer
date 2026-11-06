@@ -52,6 +52,7 @@ export interface FakeRuntime {
   /** When set, `destroy()` never settles until `releaseDestroy()` is called. */
   hangDestroy: boolean;
   releaseDestroy: () => void;
+  failDestroyWith: string | null;
   /** When set, the FIRST `getPage` blocks until `releaseGetPage()`. */
   hangFirstGetPage: boolean;
   releaseGetPage: () => void;
@@ -81,6 +82,7 @@ export function makeFakeRuntime(over: Partial<FakeRuntime> = {}): FakeRuntime {
     releaseRender: () => undefined,
     hangDestroy: false,
     releaseDestroy: () => undefined,
+    failDestroyWith: null,
     hangFirstGetPage: false,
     releaseGetPage: () => undefined,
     ...over,
@@ -171,12 +173,17 @@ export function makeFakeRuntime(over: Partial<FakeRuntime> = {}): FakeRuntime {
           if (destruction) return destruction;
           ctrl.destroyTaskCalls += 1;
           worker.destroyed = true;
-          destruction = new Promise<void>((res) => {
+          const failure = ctrl.failDestroyWith;
+          destruction = new Promise<void>((res, rej) => {
             const settle = () => {
               if (worker.destroySettled) return;
               worker.destroySettled = true;
-              ctrl.liveWorkers -= 1;
-              res();
+              // PDF.js rejects a failed teardown before terminating its worker.
+              if (failure) rej(new Error(failure));
+              else {
+                ctrl.liveWorkers -= 1;
+                res();
+              }
             };
             if (ctrl.hangDestroy) ctrl.releaseDestroy = settle;
             else settle();

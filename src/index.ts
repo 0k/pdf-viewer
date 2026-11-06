@@ -12,10 +12,12 @@
  * - ⚠ The LOADING TASK is the sole owner of worker/transport teardown.
  *   The runtime's `PdfDocument` has no `destroy`, so `doc.destroy()` is a
  *   compile error rather than a second path to the same worker.
- * - ⚠ Teardown → startup is SERIALIZED. A reload awaits the previous
- *   task's `destroy()` (settled, rejection tolerated) before importing
- *   the runtime or creating a worker; two workers overlapping blanks the
- *   canvas on WebView 91.
+ * - ⚠ Teardown → startup is SERIALIZED across hosts. A reload awaits its
+ *   previous task's `destroy()` before importing the runtime; every load
+ *   awaits all pending task teardowns (settled, rejection tolerated)
+ *   before creating a worker. Failed teardown is logged and does not
+ *   block startup, but may leave its worker running. Overlap can blank
+ *   the canvas on WebView 91.
  * - ⚠ The DISPLAYED page is never `cleanup()`-ed. Releasing it right
  *   after `render()` resolves can race the first compositor flush and
  *   lose the paint. Only stale, cancelled or errored renders — whose
@@ -171,6 +173,9 @@ interface Bounds {
   readonly max: number;
   readonly step: number;
 }
+
+/** Only unsettled task teardowns are retained, regardless of their host. */
+const pendingTaskDestructions = new Set<Promise<void>>();
 
 /**
  * Internal renderer state, never returned to hosts. The public owner is a
@@ -413,7 +418,16 @@ class Viewer implements PdfViewerOwner {
   private destroyTask(task: PdfLoadingTask): void {
     if (this.taskDestructions.has(task)) return;
     const destruction = task.destroy()
-      .catch((reason) => console.error("pdf-viewer: task.destroy failed", reason));
+      .catch((reason) => {
+        try {
+          console.error("pdf-viewer: task.destroy failed", reason);
+        } catch {
+          // A throwing host logger must not reject the teardown/startup barrier.
+        }
+      });
+    pendingTaskDestructions.add(destruction);
+    const forget = () => { pendingTaskDestructions.delete(destruction); };
+    void destruction.then(forget, forget);
     this.taskDestructions.set(task, destruction);
     this.pendingDestroy = Promise.all([this.pendingDestroy, destruction]).then(() => undefined);
   }
@@ -439,6 +453,12 @@ class Viewer implements PdfViewerOwner {
       if (superseded()) return;
       const runtime = await loadPdfRuntime();
       if (superseded()) return;
+      // Check after the import and after every wait: another host may
+      // begin teardown while either await is parked.
+      while (pendingTaskDestructions.size > 0) {
+        await Promise.all(pendingTaskDestructions);
+        if (superseded()) return;
+      }
       task = runtime.getDocument({
         url: this.options.url,
         disableAutoFetch: true,
@@ -842,9 +862,13 @@ const viewerOf = new WeakMap<HTMLElement, Viewer>();
 /**
  * Mount a viewer into `host` and start loading `options.url`.
  *
- * Mounting twice on one host replaces the previous viewer, releasing its
- * loading task before the replacement starts its worker. The returned
- * owner acts only on the viewer it mounted.
+ * Mounting twice on one host replaces the previous viewer. On any host,
+ * worker startup waits for every pending loading-task teardown in this
+ * module to settle, including rejected teardowns. Hosts need not await
+ * an old owner's destroy() before mounting on a new element. The returned
+ * owner acts only on the viewer it mounted. A failed teardown is logged
+ * and allows startup, but may leave its worker running. A slow or never
+ * settling teardown delays or blocks startup across all hosts.
  */
 export function mountPdfViewer(host: HTMLElement, options: PdfViewerOptions): PdfViewerOwner {
   const previous = viewerOf.get(host);

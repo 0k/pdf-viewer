@@ -18,8 +18,10 @@ by `@0k/pdfjs-legacy-runtime`, consumed here as an exact peer dependency.
   a document-level `destroy` (the runtime type makes it a compile error).
 - Never `cleanup()` the page currently displayed; only stale, cancelled or
   errored renders. Android WebView 91 blanks the canvas otherwise.
-- Serialize teardown → startup: a reload awaits the previous loading task's
-  `destroy()` before creating a new worker.
+- Serialize teardown → startup: every startup waits for all pending
+  loading-task teardowns of the module to settle, across hosts. A reload
+  also awaits its previous loading task's `destroy()` before creating a
+  new worker.
 - Render off-screen and commit to the visible canvas in one synchronous step,
   so resizing the backing store never exposes a blank frame.
 - Cap the device pixel ratio used for the backing canvas (memory on phones).
@@ -32,6 +34,7 @@ by `@0k/pdfjs-legacy-runtime`, consumed here as an exact peer dependency.
   `npm run check:chrome91`.
 - Strict `tsc` (`strict`, `noUncheckedIndexedAccess`) is the static check; do not add a separate TypeScript linter.
 - Write specification tests first and run `npm run check` before a release.
+- Never leave a teardown pending at the end of a test.
 
 ## Delivery
 

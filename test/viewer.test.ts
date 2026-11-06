@@ -381,6 +381,144 @@ describe("error and retry", () => {
 });
 
 describe("teardown", () => {
+  it.each([null, "teardown failed"])("waits across hosts until teardown settles: %s", async (failure) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const ctrl = installFakeRuntime({ hangDestroy: true, failDestroyWith: failure });
+    const first = mountPdfViewer(mountHost(), { url: "a.pdf" });
+    await flush();
+    expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf"]);
+    const destroying = first.destroy();
+    const second = mountPdfViewer(mountHost(), { url: "b.pdf" });
+    try {
+      await flush(32);
+      expect(ctrl.destroyTaskCalls).toBe(1);
+      expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf"]);
+      ctrl.releaseDestroy();
+      await destroying;
+      await flush(32);
+      expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf", "b.pdf"]);
+      expect(second.state().status).toBe("ready");
+      expect(ctrl.liveWorkers).toBe(failure ? 2 : 1);
+      if (failure) expect(logged).toHaveBeenCalledWith("pdf-viewer: task.destroy failed", expect.any(Error));
+      else {
+        expect(ctrl.maxLiveWorkers).toBe(1);
+        expect(logged).not.toHaveBeenCalled();
+      }
+    } finally {
+      ctrl.releaseDestroy();
+      ctrl.hangDestroy = false;
+      ctrl.failDestroyWith = null;
+      await destroying;
+      await second.destroy();
+    }
+  });
+
+  it("starts on a new host after failed teardown even if console.error throws", async () => {
+    const loggingError = new Error("logger failed");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => { throw loggingError; });
+    const ctrl = installFakeRuntime({ hangDestroy: true, failDestroyWith: "teardown failed" });
+    const first = mountPdfViewer(mountHost(), { url: "a.pdf" });
+    await flush(32);
+    const destroying = first.destroy();
+    const second = mountPdfViewer(mountHost(), { url: "b.pdf" });
+    try {
+      await flush(32);
+      expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf"]);
+      ctrl.releaseDestroy();
+      await expect(destroying).resolves.toBeUndefined();
+      await flush(32);
+      expect(logged).toHaveBeenCalledWith("pdf-viewer: task.destroy failed", expect.any(Error));
+      expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf", "b.pdf"]);
+      expect(second.state().status).toBe("ready");
+    } finally {
+      ctrl.releaseDestroy();
+      ctrl.hangDestroy = false;
+      ctrl.failDestroyWith = null;
+      await Promise.allSettled([destroying, second.destroy()]);
+    }
+  });
+
+  it("waits for a teardown begun while it is already waiting", async () => {
+    const ctrl = installFakeRuntime({ hangDestroy: true });
+    const urls = () => ctrl.getDocumentParams.map((params) => params.url);
+    const first = mountPdfViewer(mountHost(), { url: "a.pdf" });
+    const second = mountPdfViewer(mountHost(), { url: "b.pdf" });
+    await flush(32);
+    const destroyingA = first.destroy();
+    const releaseA = ctrl.releaseDestroy;
+    const third = mountPdfViewer(mountHost(), { url: "c.pdf" });
+    await flush(32);
+    const destroyingB = second.destroy();
+    const releaseB = ctrl.releaseDestroy;
+    try {
+      releaseA();
+      await destroyingA;
+      await flush(32);
+      expect(urls()).toEqual(["a.pdf", "b.pdf"]);
+      releaseB();
+      await destroyingB;
+      await flush(32);
+      expect(urls()).toEqual(["a.pdf", "b.pdf", "c.pdf"]);
+    } finally {
+      releaseA();
+      releaseB();
+      ctrl.hangDestroy = false;
+      await Promise.all([destroyingA, destroyingB, third.destroy()]);
+    }
+  });
+
+  it("waits for every pending teardown across hosts, not just the most recent", async () => {
+    const a = installFakeRuntime({ hangDestroy: true });
+    const first = mountPdfViewer(mountHost(), { url: "a.pdf" });
+    await flush();
+    const b = installFakeRuntime({ hangDestroy: true });
+    const second = mountPdfViewer(mountHost(), { url: "b.pdf" });
+    await flush();
+    const destroyingA = first.destroy();
+    const destroyingB = second.destroy();
+    const third = mountPdfViewer(mountHost(), { url: "c.pdf" });
+    try {
+      b.releaseDestroy();
+      await destroyingB;
+      await flush(32);
+      expect(b.getDocumentParams.map((params) => params.url)).toEqual(["b.pdf"]);
+      a.releaseDestroy();
+      await destroyingA;
+      await flush(32);
+      expect(b.getDocumentParams.map((params) => params.url)).toEqual(["b.pdf", "c.pdf"]);
+    } finally {
+      a.releaseDestroy();
+      b.releaseDestroy();
+      b.hangDestroy = false;
+      await Promise.all([destroyingA, destroyingB, third.destroy()]);
+    }
+  });
+
+  it("waits for cross-host teardown begun during its runtime import", async () => {
+    const ctrl = installFakeRuntime({ hangDestroy: true });
+    const first = mountPdfViewer(mountHost(), { url: "a.pdf" });
+    await flush();
+    let releaseRuntime!: (runtime: PdfRuntime) => void;
+    __setPdfRuntimeForTest(new Promise<PdfRuntime>((resolve) => { releaseRuntime = resolve; }));
+    const second = mountPdfViewer(mountHost(), { url: "b.pdf" });
+    await flush();
+    const destroying = first.destroy();
+    releaseRuntime(ctrl.runtime);
+    try {
+      await flush(32);
+      expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf"]);
+      ctrl.releaseDestroy();
+      await destroying;
+      await flush(32);
+      expect(ctrl.getDocumentParams.map((params) => params.url)).toEqual(["a.pdf", "b.pdf"]);
+    } finally {
+      ctrl.releaseDestroy();
+      ctrl.hangDestroy = false;
+      await destroying;
+      await second.destroy();
+    }
+  });
+
   it.each([false, true])("releases canvas storage on destroy with a pending render: %s", async (pending) => {
     const ctrl = installFakeRuntime();
     const { host, owner } = mountReady();
