@@ -158,7 +158,8 @@ describe("runtime boundary", () => {
 
   it("declares the runtime as an exact peer, not a bundled dependency", () => {
     const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8"));
-    expect(pkg.peerDependencies["@0k/pdfjs-legacy-runtime"]).toBe("0.2.0");
+    expect(pkg.peerDependencies["@0k/pdfjs-legacy-runtime"]).toBe("0.2.2");
+    expect(pkg.devDependencies["@0k/pdfjs-legacy-runtime"]).toBe("0.2.2");
     expect(pkg.dependencies).toBeUndefined();
   });
 });

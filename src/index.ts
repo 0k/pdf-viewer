@@ -9,15 +9,19 @@
  *   range-loads the cross-reference table and the current page rather
  *   than the whole file (`disableAutoFetch` + `disableStream`; range left
  *   enabled). A 67 MB scan paints page 1 without downloading page 40.
+ *   An empty or unparsable URL shows an error without starting a worker.
  * - ⚠ The LOADING TASK is the sole owner of worker/transport teardown.
  *   The runtime's `PdfDocument` has no `destroy`, so `doc.destroy()` is a
  *   compile error rather than a second path to the same worker.
  * - ⚠ Teardown → startup is SERIALIZED across hosts. A reload awaits its
  *   previous task's `destroy()` before importing the runtime; every load
  *   awaits all pending task teardowns (settled, rejection tolerated)
- *   before creating a worker. Failed teardown is logged and does not
- *   block startup, but may leave its worker running. Overlap can blank
- *   the canvas on WebView 91.
+ *   before creating a worker, since overlap can blank the canvas on
+ *   WebView 91. The pinned runtime stops the worker before teardown
+ *   settles, even if transport teardown fails. A failed teardown is
+ *   logged and does not block startup. A slow teardown delays every later
+ *   viewer in the module; one that never settles (e.g. a worker script
+ *   that neither loads nor reports an error) holds them back.
  * - ⚠ The DISPLAYED page is never `cleanup()`-ed. Releasing it right
  *   after `render()` resolves can race the first compositor flush and
  *   lose the paint. Only stale, cancelled or errored renders — whose
@@ -866,9 +870,13 @@ const viewerOf = new WeakMap<HTMLElement, Viewer>();
  * worker startup waits for every pending loading-task teardown in this
  * module to settle, including rejected teardowns. Hosts need not await
  * an old owner's destroy() before mounting on a new element. The returned
- * owner acts only on the viewer it mounted. A failed teardown is logged
- * and allows startup, but may leave its worker running. A slow or never
- * settling teardown delays or blocks startup across all hosts.
+ * owner acts only on the viewer it mounted. The pinned runtime stops the
+ * worker before teardown settles, even if transport teardown fails. A
+ * failed teardown is logged and does not block startup. A slow teardown
+ * delays every later viewer in the module, across all hosts; one that
+ * never settles (e.g. a worker script that neither loads nor reports an
+ * error) holds them back. An empty or
+ * unparsable URL shows the error state without starting a worker.
  */
 export function mountPdfViewer(host: HTMLElement, options: PdfViewerOptions): PdfViewerOwner {
   const previous = viewerOf.get(host);

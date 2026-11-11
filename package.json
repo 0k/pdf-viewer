@@ -50,10 +50,10 @@
     "prepare": "npm run build"
   },
   "peerDependencies": {
-    "@0k/pdfjs-legacy-runtime": "0.2.0"
+    "@0k/pdfjs-legacy-runtime": "0.2.2"
   },
   "devDependencies": {
-    "@0k/pdfjs-legacy-runtime": "0.2.0",
+    "@0k/pdfjs-legacy-runtime": "0.2.2",
     "@types/node": "22.10.5",
     "jsdom": "25.0.1",
     "typescript": "5.7.3",

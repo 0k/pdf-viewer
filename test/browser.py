@@ -143,7 +143,56 @@ def assert_cross_host_teardown(page):
     workers = page.evaluate("""() => ({starts:window.workerStarts,
         live:window.liveWorkers, max:window.maxLiveWorkers})""")
     assert workers == {"starts": starts + 4, "live": 1, "max": 1}, workers
-    print("PASS: four unawaited destroys and new-host mounts never overlap real workers")
+    print("PASS: four unawaited destroys and new-host mounts never overlap real workers", workers)
+
+    page.evaluate("async () => {await owner.destroy();}")
+    starts = page.evaluate("window.workerStarts")
+    page.evaluate("window.maxLiveWorkers = 0")
+    for _ in range(4):
+        page.evaluate("""() => {
+            window.onWorkerStart = () => {
+                window.startupCloseState = owner.state().status;
+                void owner.destroy();
+                const host = document.getElementById('host');
+                host.replaceWith(host.cloneNode(false));
+                window.remount();
+            };
+            window.remount();
+        }""")
+        page.wait_for_selector('.pdf-viewer[data-painted="1"]')
+        assert page.evaluate("window.startupCloseState") == "loading"
+    workers = page.evaluate("""() => ({starts:window.workerStarts,
+        live:window.liveWorkers, max:window.maxLiveWorkers})""")
+    assert workers == {"starts": starts + 8, "live": 1, "max": 1}, workers
+    print("PASS: four startup destroys and new-host mounts never overlap real workers", workers)
+
+
+def assert_bad_url_without_worker(page):
+    starts = page.evaluate("""() => {
+        window.maxLiveWorkers = window.liveWorkers;
+        window.remount({url:'http://['});
+        window.badUrlOwner = window.owner;
+        const host = document.getElementById('host').cloneNode(false);
+        host.id = 'good-url-host';
+        document.body.append(host);
+        window.remount({}, host);
+        return window.workerStarts;
+    }""")
+    try:
+        error = page.locator("#host .pdf-viewer-error")
+        error.wait_for(state="visible")
+        page.wait_for_selector('#good-url-host .pdf-viewer[data-painted="1"]')
+        workers = page.evaluate("""starts => ({starts:window.workerStarts - starts,
+            live:window.liveWorkers, max:window.maxLiveWorkers})""", starts)
+        print(f"Bad URL: {error.inner_text()!r}; workers={workers}")
+        assert workers == {"starts": 1, "live": 1, "max": 1}, workers
+    finally:
+        page.evaluate("""async () => {
+            await Promise.all([badUrlOwner.destroy(), owner.destroy()]);
+            owner.host.remove();
+        }""")
+    assert page.evaluate("window.liveWorkers") == 0
+    print("PASS: bad URL shows an error without starting a worker")
 
 
 def assert_classic_scrollbar_fit(playwright, url):
@@ -212,7 +261,9 @@ def verify():
             'window.workerStarts = 0; window.liveWorkers = 0; window.maxLiveWorkers = 0;\n'
             'window.Worker = class extends NativeWorker {\n'
             'constructor(...args) {super(...args); this.released = false; window.workerStarts++; '
-            'window.liveWorkers++; window.maxLiveWorkers = Math.max(window.maxLiveWorkers, window.liveWorkers);}\n'
+            'window.liveWorkers++; window.maxLiveWorkers = Math.max(window.maxLiveWorkers, window.liveWorkers);'
+            'const onStart = window.onWorkerStart; window.onWorkerStart = null;'
+            'if (onStart) queueMicrotask(onStart);}\n'
             'terminate() {if (!this.released) {this.released = true; window.liveWorkers--;} '
             'return super.terminate();}\n'
             '};\n'
@@ -220,8 +271,9 @@ def verify():
             'CanvasRenderingContext2D.prototype.drawImage = function (...args) {'
             'if (this.canvas.classList.contains("pdf-viewer-canvas")) window.renderCount++;'
             'return Reflect.apply(drawImage, this, args);};\n'
-            'window.remount = (options = {}) => {window.paintCount = 0; window.renderCount = 0; window.owner = mountPdfViewer('
-            'document.getElementById("host"), {url:"./manual.pdf", interaction:"scroll", ...options, '
+            'window.remount = (options = {}, host = document.getElementById("host")) => {'
+            'window.paintCount = 0; window.renderCount = 0; window.owner = mountPdfViewer('
+            'host, {url:"./manual.pdf", interaction:"scroll", ...options, '
             'onStateChange:state => {if(state.status === "ready") window.paintCount++;}});};\n'
             'window.remount();\n'
         )
@@ -282,6 +334,7 @@ def verify():
                     assert_scrollbar_band_stability(page)
                     assert_cross_host_teardown(page)
                     page.evaluate("async () => {await owner.destroy();}")
+                    assert_bad_url_without_worker(page)
                     assert page.locator(".pdf-viewer").count() == 0
                     assert not errors, errors
                     print("PASS: real PDF worker, raster, zoom supersession, reload, replacement, CSS, teardown")

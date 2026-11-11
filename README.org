@@ -115,12 +115,17 @@ Mounting again on the same host replaces its viewer. Across all hosts
 using this module, every worker startup waits for all pending loading-task
 teardowns to settle, whether resolved or rejected. A host can call an old
 owner's ~destroy()~ without awaiting it and mount on a new element: the new
-worker will not overlap that pending teardown. This also applies to
-~reload()~. Only pending teardowns are retained; settled ones are removed.
-A failed teardown is logged and does not block startup, but may leave its
-worker running. A slow teardown delays startup of every later viewer in
-the module (across all hosts); a teardown that never settles holds them
-back indefinitely.
+worker will not overlap that pending teardown. The pinned runtime stops
+the old worker before teardown settles, even if the worker was still
+starting or transport teardown fails. This also applies to ~reload()~.
+Only pending teardowns are retained; settled ones are removed. A failed
+teardown is logged and does not block startup. A slow teardown, such as
+a worker busy on a heavy page, delays startup of every later viewer in
+the module, across all hosts; one that never settles, such as a worker
+script that neither loads nor reports an error, holds them back
+indefinitely.
+An empty or unparsable PDF URL shows the error state without starting a
+worker.
 An old owner cannot destroy a replacement or a viewer on another host.
 
 ** Exported constants
